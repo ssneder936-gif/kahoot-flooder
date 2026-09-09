@@ -1,5 +1,4 @@
 const express = require('express');
-const path = require('path');
 const Kahoot = require("kahoot.js-latest");
 
 const app = express();
@@ -83,6 +82,14 @@ app.get('/stats', (req, res) => {
     });
 });
 
+process.on('unhandledRejection', (reason, promise) => {
+    console.log('Caught unhandled rejection:', reason?.message || reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.log('Caught exception:', err.message);
+});
+
 function runFlood(pin, baseName, amount) {
     console.log(`Starting ${amount} bots on PIN ${pin}...`);
     
@@ -90,33 +97,52 @@ function runFlood(pin, baseName, amount) {
         if (!isFlooding) break;
         
         const name = `${baseName} (${i})`;
-        const client = new Kahoot();
-        
-        client.on("Joined", () => {
-            console.log(`[+] ${name} joined`);
-            botStats.joined++;
-        });
-        
-        client.on("Disconnect", (reason) => {
-            console.log(`[-] ${name} left: ${reason}`);
-        });
-        
-        client.on("QuestionStart", (question) => {
-            const choice = Math.floor(Math.random() * question.numberOfChoices);
-            question.answer(choice);
-            botStats.answersSubmitted++;
-        });
         
         try {
+            const client = new Kahoot();
+            
+            client.on("Joined", () => {
+                console.log(`[+] ${name} joined`);
+                botStats.joined++;
+            });
+            
+            client.on("Disconnect", (reason) => {
+                console.log(`[-] ${name} left`);
+            });
+            
+            client.on("QuestionStart", (question) => {
+                try {
+                    const choice = Math.floor(Math.random() * question.numberOfChoices);
+                    question.answer(choice);
+                    botStats.answersSubmitted++;
+                } catch (e) {
+                    console.log(`Answer error for ${name}:`, e.message);
+                }
+            });
+            
+            client.on("error", (err) => {
+                console.log(`Error for ${name}:`, err?.message || err);
+                botStats.failed++;
+            });
+            
             activeBots.push(client);
-            client.join(pin, name);
+            
+            client.join(pin, name).catch(err => {
+                console.log(`Join failed for ${name}:`, err?.message || err);
+                botStats.failed++;
+            });
+            
         } catch (err) {
-            console.log(`[!] ${name} failed: ${err.message || err}`);
+            console.log(`Setup failed for ${name}:`, err.message);
             botStats.failed++;
         }
     }
     
     console.log('All bots launched.');
+    
+    setTimeout(() => {
+        console.log(`Stats: ${botStats.joined} joined, ${botStats.failed} failed`);
+    }, 5000);
 }
 
 app.listen(PORT, () => {
