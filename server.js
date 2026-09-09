@@ -14,7 +14,6 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
 
 let isFlooding = false;
 let activeBots = [];
